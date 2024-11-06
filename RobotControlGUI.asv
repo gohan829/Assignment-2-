@@ -1,0 +1,94 @@
+ function RobotControlGUI(robot, finger1, finger2, qmatc, qmato, initialRobotPos)
+    % Create the GUI figure
+    fig = uifigure('Name', 'Robot Control Panel', 'Position', [100, 100, 400, 600]);
+
+    % Global stop flag and initial state
+    global stopFlag currentRobotPos startMainLoop;
+    stopFlag = false;  
+    currentRobotPos = initialRobotPos;
+    startMainLoop = false;
+
+    % Add a label for joint sliders
+    uilabel(fig, 'Position', [20, 540, 360, 20], 'Text', 'Joint Controls');
+
+    % Add sliders for each joint angle
+    numJoints = length(initialRobotPos);
+    jointSliders = gobjects(1, numJoints);  % Adjust size to number of joints in robot1
+    for i = 1:numJoints
+        jointSliders(i) = uislider(fig, 'Position', [20, 500 - 60*i, 360, 3], ...
+            'Limits', [-pi, pi], 'ValueChangedFcn', @(sld,event) updateRobotJoint(sld, i));
+        uilabel(fig, 'Position', [20, 500 - 60*i + 20, 360, 20], 'Text', ['Joint ' num2str(i)]);
+    end
+
+    % Gripper control buttons (new positions)
+    gripOpenBtn = uibutton(fig, 'Text', 'Open Gripper', 'Position', [20, 500, 160, 30], ...
+        'ButtonPushedFcn', @(btn,event) controlGripper('open'));
+    gripCloseBtn = uibutton(fig, 'Text', 'Close Gripper', 'Position', [200, 500, 160, 30], ...
+        'ButtonPushedFcn', @(btn,event) controlGripper('close'));
+
+    % Reset and Emergency Stop buttons (new positions)
+    resetBtn = uibutton(fig, 'Text', 'Reset', 'Position', [20, 450, 160, 30], ...
+        'ButtonPushedFcn', @(btn,event) resetSimulation());
+    stopBtn = uibutton(fig, 'Text', 'Emergency Stop', 'Position', [200, 450, 160, 30], ...
+        'ButtonPushedFcn', @(btn,event) emergencyStop());
+    
+    % Resume button
+    resumeBtn = uibutton(fig, 'Text', 'Resume', 'Position', [200, 600 , 160, 30], ...
+        'ButtonPushedFcn', @(btn,event) resumeOperation());
+
+    %% Nested Functions
+
+    % Function to update robot joints based on slider values
+    function updateRobotJoint(sld, jointIdx)
+        currentRobotPos = robot.model.getpos();
+        currentRobotPos(jointIdx) = sld.Value;
+        robot.model.animate(currentRobotPos);
+        drawnow();
+    end
+
+    % Function to control gripper
+    function controlGripper(action)
+        if strcmp(action, 'close')
+            animateGripper(qmatc);
+        elseif strcmp(action, 'open')
+            animateGripper(qmato);
+        end
+    end
+
+    % Function to animate gripper open/close
+    function animateGripper(trajectory)
+        for step = 1:length(trajectory)
+            while stopFlag, pause(0.1); end  % Pauses if stopFlag is true
+            finger1.model.animate(trajectory(step, :));
+            finger2.model.animate(trajectory(step, :));
+            drawnow();
+        end
+    end
+
+    % Function for emergency stop
+    function emergencyStop()
+        stopFlag = true;
+        disp('Emergency Stop Activated');
+    end
+
+    % Function to resume operation
+    function resumeOperation()
+        stopFlag = false;
+        disp('Resuming Operation');
+    end
+
+    % Function to reset simulation and restart from Step 1
+    function resetSimulation()
+        stopFlag = false;
+        startMainLoop = true;  % Set flag to restart main loop
+
+        % Reset robot to initial position
+        smoothTrajectoryBack = jtraj(currentRobotPos, initialRobotPos, 35);
+        for step = 1:35
+            while stopFlag, pause(0.1); end  % Pauses if stopFlag is true
+            robot.model.animate(smoothTrajectoryBack(step, :));
+            drawnow();
+        end
+        disp('Simulation Reset - Returning to Step 1');
+    end
+ end
